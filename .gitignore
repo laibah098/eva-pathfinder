@@ -1,0 +1,15 @@
+
+# Large original NASA datasets
+raw/
+
+# Python temporary files
+__pycache__/
+*.pyc
+
+# QGIS temporary and backup files
+*.qgz~
+*.qgs~
+
+# Local environment files
+.venv/
+.env
