@@ -2,6 +2,7 @@
 import heapq
 import numpy as np
 import rasterio
+import json
 
 PIXEL_SIZE_M = 5
 MAX_SLOPE_DEGREES = 10
@@ -227,3 +228,33 @@ if len(test_path) > 1:
 
 else:
     print("No valid route found under the slope limit.")
+
+# -----------------------------------------
+# EXPORT ROUTE FOR FRONTEND MAP
+# -----------------------------------------
+
+from pathlib import Path
+
+if len(test_path) > 1:
+    # Convert crop-local coordinates to full raster coordinates
+    full_grid_path = [
+        [int(row + 50), int(col + 700)]
+        for row, col in test_path
+    ]
+
+    route_data = {
+        "path": full_grid_path,
+        "distance_m": round(float(total_distance_m), 2),
+        "max_slope_deg": round(float(max(slopes)), 2),
+        "avg_slope_deg": round(float(np.mean(slopes)), 2)
+    }
+
+    output_path = Path("frontend/route.json")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with output_path.open("w", encoding="utf-8") as f:
+        json.dump(route_data, f, indent=2)
+
+    print("Route saved to:", output_path)
+else:
+    print("No route to export.")
