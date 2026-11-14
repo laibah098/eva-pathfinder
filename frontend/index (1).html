@@ -1,0 +1,93 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Mars EVA Pathfinder</title>
+
+    <!-- Leaflet map styling -->
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    >
+
+    <!-- Our own styling -->
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <header>
+        <h1>MARS EVA PATHFINDER</h1>
+        <p>Mission Navigation System</p>
+    </header>
+
+    <main>
+
+        <section class="controls">
+            <h2>Map Controls</h2>
+
+            <button id="photoBtn">Photo</button>
+            <button id="heightBtn">Height</button>
+            <button id="thermalBtn" title="THEMIS Nighttime IR — resampled to 5 m grid. Contextual imagery only, not calibrated surface temperature.">Thermal (THEMIS IR)</button>
+            <button id="targetBtn">Add Science Target</button>
+            <button id="routeBtn">Demo Route</button>
+            <button id="resetBtn">Reset</button>
+        </section>
+
+        <section class="map-section">
+            <div id="map"></div>
+        </section>
+
+        
+<section class="information">
+    <h2>MISSION INFORMATION</h2>
+
+    <div class="mission-grid">
+
+        <div class="mission-card">
+            <span>MISSION STATUS</span>
+            <p id="status">System ready. Select a location.</p>
+        </div>
+
+        <div class="mission-card">
+            <span>SELECTED COORDINATES</span>
+            <p id="coordinates">Not selected</p>
+        </div>
+
+        <div class="mission-card">
+            <span>START LOCATION</span>
+            <p id="startCoordinates">Not selected</p>
+        </div>
+
+        <div class="mission-card">
+            <span>DESTINATION</span>
+            <p id="endCoordinates">Not selected</p>
+        </div>
+
+        <div class="mission-card">
+            <span>SCIENCE TARGETS</span>
+            <p id="scienceCount">0</p>
+        </div>
+
+        <div class="mission-card">
+    <span>ROUTE DISTANCE</span>
+    <p id="routeDistance">Not calculated</p>
+</div>
+
+    </div>
+</section>
+
+
+    </main>
+
+    <!-- Leaflet map library -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Our own JavaScript -->
+    <script src="script.js"></script>
+
+</body>
+</html>
