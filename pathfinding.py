@@ -243,11 +243,13 @@ if len(test_path) > 1:
     ]
 
     route_data = {
-        "path": full_grid_path,
-        "distance_m": round(float(total_distance_m), 2),
-        "max_slope_deg": round(float(max(slopes)), 2),
-        "avg_slope_deg": round(float(np.mean(slopes)), 2)
-    }
+    "path": full_grid_path,
+    "distance_m": round(float(total_distance_m), 2),
+    "max_slope_deg": round(float(max(slopes)), 2),
+    "avg_slope_deg": round(float(np.mean(slopes)), 2),
+    "grid_width": int(elevation.shape[1]),
+    "grid_height": int(elevation.shape[0])
+}
 
     output_path = Path("frontend/route.json")
     output_path.parent.mkdir(parents=True, exist_ok=True)

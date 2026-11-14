@@ -331,5 +331,7 @@
   ],
   "distance_m": 568.61,
   "max_slope_deg": 9.81,
-  "avg_slope_deg": 4.62
+  "avg_slope_deg": 4.62,
+  "grid_width": 1364,
+  "grid_height": 2707
 }
