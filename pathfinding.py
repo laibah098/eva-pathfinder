@@ -1,83 +1,229 @@
-import numpy as np
+
 import heapq
+import numpy as np
+import rasterio
+
+PIXEL_SIZE_M = 5
+MAX_SLOPE_DEGREES = 10
+
 
 def get_cost(current_node, next_node, height_grid, science_grid, weights):
     """
-    Calculates the movement cost from current_node to next_node.
-    Applies the hackathon penalty math: slope, distance, and science value.
+    Calculate movement cost using real Mars terrain elevation.
+    Block movements steeper than the test slope threshold.
     """
-    # 1. Calculate physical distance (1 for horizontal/vertical, ~1.414 for diagonal)
-    distance = np.sqrt((current_node[0] - next_node[0])**2 + (current_node[1] - next_node[1])**2)
-    
-    # 2. Calculate Slope Penalty (steepness)
-    height_diff = abs(height_grid[next_node] - height_grid[current_node])
-    slope_penalty = height_diff / distance
-    
-    # 3. Assess Science Value (negative cost makes a path more desirable)
+
+    # Calculate physical distance in metres
+    distance_pixels = np.hypot(
+        next_node[0] - current_node[0],
+        next_node[1] - current_node[1]
+    )
+    distance_m = distance_pixels * PIXEL_SIZE_M
+
+    # Calculate slope using elevation difference
+    height_diff = abs(
+        float(height_grid[next_node]) - float(height_grid[current_node])
+    )
+
+    slope_degrees = np.degrees(
+        np.arctan(height_diff / distance_m)
+    )
+
+    # Block terrain steeper than 10 degrees
+    if slope_degrees > MAX_SLOPE_DEGREES:
+        return float("inf")
+
+    slope_penalty = height_diff / distance_m
+
+    # Science grid is currently zero everywhere
     science_value = science_grid[next_node]
-    
-    # Apply weights
-    total_cost = (weights["terrain"] * slope_penalty) + (weights["distance"] * distance) + (weights["science"] * science_value)
-    
-    return max(0.1, total_cost) # Ensure cost is always slightly positive to prevent infinite loops
+
+    total_cost = (
+        weights["terrain"] * slope_penalty
+        + weights["distance"] * distance_m
+        + weights["science"] * science_value
+    )
+
+    return max(0.1, total_cost)
+
 
 def find_route(start, end, height_grid, science_grid, weights):
     """
-    Implements the A* search algorithm to find the lowest-cost path.
+    Find a route using A* search.
+    Avoid missing elevation data and steep terrain.
     """
+
     rows, cols = height_grid.shape
+
+    if height_grid.shape != science_grid.shape:
+        raise ValueError("Elevation and science grids must match")
+
+    def valid(node):
+        r, c = node
+        return (
+            0 <= r < rows
+            and 0 <= c < cols
+            and np.isfinite(height_grid[node])
+            and height_grid[node] != -9999
+        )
+
+    if not valid(start) or not valid(end):
+        return []
+
     open_set = []
     heapq.heappush(open_set, (0, start))
-    
+
     came_from = {}
     g_score = {start: 0}
-    
+
+    neighbors = [
+        (0, 1), (1, 0), (0, -1), (-1, 0),
+        (1, 1), (1, -1), (-1, 1), (-1, -1)
+    ]
+
     while open_set:
-        current_cost, current_node = heapq.heappop(open_set)
-        
+        current_f, current_node = heapq.heappop(open_set)
+
+        # Ignore outdated queue entries
+        heuristic = (
+            np.hypot(
+                end[0] - current_node[0],
+                end[1] - current_node[1]
+            )
+            * PIXEL_SIZE_M
+            * weights["distance"]
+        )
+
+        if current_f > g_score[current_node] + heuristic + 1e-9:
+            continue
+
         if current_node == end:
-            # Reconstruct the path backwards from the end
             path = []
+
             while current_node in came_from:
                 path.append(current_node)
                 current_node = came_from[current_node]
+
             path.append(start)
-            return path[::-1] # Reverse it so it goes start to end
-            
-        # Check all 8 neighboring squares (horizontal, vertical, diagonal)
-        neighbors = [(0, 1), (1, 0), (0, -1), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1)]
-        
-        for dx, dy in neighbors:
-            neighbor = (current_node[0] + dx, current_node[1] + dy)
-            
-            # Make sure neighbor is inside the map boundaries
-            if 0 <= neighbor[0] < rows and 0 <= neighbor[1] < cols:
-                movement_cost = get_cost(current_node, neighbor, height_grid, science_grid, weights)
-                tentative_g_score = g_score[current_node] + movement_cost
-                
-                # If we found a cheaper way to get to this neighbor, save it
-                if neighbor not in g_score or tentative_g_score < g_score[neighbor]:
-                    came_from[neighbor] = current_node
-                    g_score[neighbor] = tentative_g_score
-                    
-                    # A* heuristic: distance remaining to the end goal
-                    h_score = np.sqrt((end[0] - neighbor[0])**2 + (end[1] - neighbor[1])**2)
-                    f_score = tentative_g_score + h_score
-                    heapq.heappush(open_set, (f_score, neighbor))
-                    
-    return [] # Return empty list if no path is found
+            return path[::-1]
 
-# Mock data to unblock you immediately
-np.random.seed(42) # Set seed so the random grid is the same every time you test
-fake_heights = np.random.rand(20, 20) * 50  # 20x20 grid of random elevations
-fake_science = np.zeros((20, 20))           # 20x20 grid of science targets
-fake_science[10, 10] = 50                   # Add a fake high-value science target in the middle
+        for dr, dc in neighbors:
+            neighbor = (
+                current_node[0] + dr,
+                current_node[1] + dc
+            )
 
-test_start = (0, 0)
-test_end = (19, 19)
-test_weights = {"terrain": 1.5, "distance": 1.0, "science": -2.0}
+            if not valid(neighbor):
+                continue
 
-print("Running test route on mock data...")
-test_path = find_route(test_start, test_end, fake_heights, fake_science, test_weights)
-print(f"Optimal path found! It takes {len(test_path)} steps.")
+            movement_cost = get_cost(
+                current_node,
+                neighbor,
+                height_grid,
+                science_grid,
+                weights
+            )
+
+            # Skip slopes exceeding our threshold
+            if not np.isfinite(movement_cost):
+                continue
+
+            tentative_g_score = (
+                g_score[current_node] + movement_cost
+            )
+
+            if (
+                neighbor not in g_score
+                or tentative_g_score < g_score[neighbor]
+            ):
+                came_from[neighbor] = current_node
+                g_score[neighbor] = tentative_g_score
+
+                h_score = (
+                    np.hypot(
+                        end[0] - neighbor[0],
+                        end[1] - neighbor[1]
+                    )
+                    * PIXEL_SIZE_M
+                    * weights["distance"]
+                )
+
+                f_score = tentative_g_score + h_score
+
+                heapq.heappush(
+                    open_set,
+                    (f_score, neighbor)
+                )
+
+    return []
+
+
+# -----------------------------------------
+# LOAD REAL NASA HIRISE ELEVATION DATA
+# -----------------------------------------
+
+with rasterio.open("processed/elevation_5m.tif") as src:
+    elevation = src.read(1)
+
+# Use the valid 100x100 Mars terrain section
+real_heights = elevation[50:150, 700:800]
+
+# No science bonuses yet
+science_grid = np.zeros(real_heights.shape)
+
+# Start and end in local pixel coordinates
+test_start = (10, 10)
+test_end = (90, 90)
+
+test_weights = {
+    "terrain": 1.5,
+    "distance": 1.0,
+    "science": 0.0
+}
+
+print("Running A* on REAL NASA Mars elevation data...")
+
+test_path = find_route(
+    test_start,
+    test_end,
+    real_heights,
+    science_grid,
+    test_weights
+)
+
+print("Route found:", len(test_path) > 0)
+print("Number of steps:", len(test_path))
 print("Path coordinates:", test_path)
+
+
+# -----------------------------------------
+# ANALYZE ROUTE SLOPES
+# -----------------------------------------
+
+if len(test_path) > 1:
+    slopes = []
+    total_distance_m = 0
+
+    for a, b in zip(test_path[:-1], test_path[1:]):
+        height_difference = abs(
+            float(real_heights[b]) - float(real_heights[a])
+        )
+
+        distance_m = (
+            np.hypot(b[0] - a[0], b[1] - a[1])
+            * PIXEL_SIZE_M
+        )
+
+        slope_degrees = np.degrees(
+            np.arctan(height_difference / distance_m)
+        )
+
+        slopes.append(slope_degrees)
+        total_distance_m += distance_m
+
+    print("Route distance:", round(total_distance_m, 2), "metres")
+    print("Maximum route slope:", round(max(slopes), 2), "degrees")
+    print("Average route slope:", round(np.mean(slopes), 2), "degrees")
+
+else:
+    print("No valid route found under the slope limit.")
