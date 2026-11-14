@@ -120,8 +120,44 @@ def convert_thermal():
 
         print("Updated thermal map with improved contrast.")
 
+def convert_photo():
+    with rasterio.open(input_folder / "photo_5m.tif") as src:
+        data = src.read(1, masked=True).astype(np.float32)
+        valid = ~np.ma.getmaskarray(data)
+        values = data.compressed()
 
+        if values.size == 0:
+            raise ValueError("No valid pixels in photo_5m.tif")
+
+        low, high = np.percentile(values, [2, 98])
+
+        if high <= low:
+            high = low + 1
+
+        normalized = np.clip(
+            (data.filled(low) - low) / (high - low),
+            0, 1
+        )
+
+        gray = (normalized * 255).astype(np.uint8)
+
+        # Give the grayscale Mars photo a subtle reddish tint.
+        rgb = np.stack([
+            gray,
+            (gray.astype(np.float32) * 0.78).astype(np.uint8),
+            (gray.astype(np.float32) * 0.62).astype(np.uint8)
+        ], axis=-1)
+
+        alpha = valid.astype(np.uint8) * 255
+        rgba = np.dstack((rgb, alpha))
+
+        Image.fromarray(rgba).save(
+            output_folder / "mars-photo.png"
+        )
+
+        print("Created Mars photo map.")
 convert_height()
 convert_thermal()
+convert_photo()
 
-print("\nBoth improved map images have been created!")
+print("\nAll three Mars map images have been created!")

@@ -1,22 +1,24 @@
 
+"use strict";
+
 // ========================================
 // MARS EVA PATHFINDER
-// Main Map Functionality
 // ========================================
-
-
-// 1. MAP SETTINGS
 
 const mapWidth = 1364;
 const mapHeight = 2707;
+
+const ROUTE_API = "http://127.0.0.1:5000/api/route";
+const LANDING_API = "http://127.0.0.1:5000/api/landing";
 
 const bounds = [
     [0, 0],
     [mapHeight, mapWidth]
 ];
 
-
-// 2. CREATE THE MAP
+// ========================================
+// MAP SETUP
+// ========================================
 
 const map = L.map("map", {
     crs: L.CRS.Simple,
@@ -26,44 +28,77 @@ const map = L.map("map", {
 
 map.fitBounds(bounds);
 
-
-// Add a simple Mars-coloured background
-
-const background = L.rectangle(bounds, {
+L.rectangle(bounds, {
     color: "#a65e3d",
     weight: 2,
     fillColor: "#8b5038",
-    fillOpacity: 0.25
+    fillOpacity: 0.25,
+    interactive: false
 }).addTo(map);
 
+const photoLayer = L.imageOverlay(
+    "images/mars-photo.png",
+    bounds
+);
 
-// 3. MAP LAYERS
+const heightLayer = L.imageOverlay(
+    "images/mars-height.png",
+    bounds
+);
 
-// These image files will be added later.
-
-const photoLayer = L.imageOverlay("images/mars-photo.png", bounds);
-const heightLayer = L.imageOverlay("images/mars-height.png", bounds);
-const thermalLayer = L.imageOverlay("images/mars-thermal.png", bounds);
-
-
-// Show the photo layer by default
+const thermalLayer = L.imageOverlay(
+    "images/mars-thermal.png",
+    bounds
+);
 
 let currentLayer = photoLayer;
 currentLayer.addTo(map);
 
+function updateStatus(message) {
+    document.getElementById("status").textContent = message;
+}
 
-// Update status if an image cannot be loaded
+function changeLayer(layer, message) {
+    map.removeLayer(currentLayer);
 
-[photoLayer, heightLayer, thermalLayer].forEach(layer => {
-    layer.on("error", function () {
-        updateStatus(
-            "Image not found yet. Terrain images will be added later."
-        );
-    });
-});
+    currentLayer = layer;
+    currentLayer.addTo(map);
 
+    updateStatus(message);
+}
 
-// 4. MISSION VARIABLES
+document.getElementById("photoBtn").addEventListener(
+    "click",
+    () => changeLayer(
+        photoLayer,
+        "Photo layer selected."
+    )
+);
+
+document.getElementById("heightBtn").addEventListener(
+    "click",
+    () => changeLayer(
+        heightLayer,
+        "Elevation layer selected."
+    )
+);
+
+document.getElementById("thermalBtn").addEventListener(
+    "click",
+    () => changeLayer(
+        thermalLayer,
+        "THEMIS IR layer selected. Contextual imagery only."
+    )
+);
+
+// ========================================
+// MISSION STATE
+// ========================================
+
+// Available modes:
+// none, start, destination, landing
+
+let mapMode = "none";
 
 let startPoint = null;
 let endPoint = null;
@@ -71,62 +106,106 @@ let endPoint = null;
 let startMarker = null;
 let endMarker = null;
 
-let scienceMarkers = [];
-let routeLine = null;
+let landingMarker = null;
+let landingCircle = null;
 
-let selectingScienceTarget = false;
+let routeLines = {};
+let routeResults = {};
 
+let selectedRoute = "safest";
 
-// 5. STATUS DISPLAY
+let routeRequestInProgress = false;
+let landingRequestNumber = 0;
 
-function updateStatus(message) {
-    document.getElementById("status").textContent = message;
+const ROUTE_STYLES = {
+    safest: {
+        name: "Gentlest Terrain",
+        color: "#00ff88"
+    },
+
+    fastest: {
+        name: "Shortest Safe",
+        color: "#27a8ff"
+    },
+
+    energy: {
+        name: "Lower-Effort Proxy",
+        color: "#ff9f32"
+    }
+};
+
+// ========================================
+// HELPER FUNCTIONS
+// ========================================
+
+function toGridCoordinates(location) {
+    const row = Math.max(
+        0,
+        Math.min(
+            mapHeight - 1,
+            Math.floor(mapHeight - location.lat)
+        )
+    );
+
+    const col = Math.max(
+        0,
+        Math.min(
+            mapWidth - 1,
+            Math.floor(location.lng)
+        )
+    );
+
+    return [row, col];
 }
 
+function gridToMap(row, col, gridHeight, gridWidth) {
+    const lat =
+        (gridHeight - row - 0.5) *
+        (mapHeight / gridHeight);
 
-// 6. COORDINATE DISPLAY
+    const lng =
+        (col + 0.5) *
+        (mapWidth / gridWidth);
 
-function updateCoordinates(latlng) {
-    const row = Math.round(mapHeight - latlng.lat);
-    const column = Math.round(latlng.lng);
-
-    document.getElementById("coordinates").textContent =
-        `Coordinates: Row ${row}, Column ${column}`;
+    return [lat, lng];
 }
-// Format coordinates for the mission dashboard
+
 function formatCoordinates(location) {
-    const row = Math.round(mapHeight - location.lat);
-    const column = Math.round(location.lng);
+    const [row, col] = toGridCoordinates(location);
 
-    return `Row ${row}, Column ${column}`;
+    return `Row ${row}, Column ${col}`;
 }
 
-// 7. MAP CLICK FUNCTION
+function isInsideMap(location) {
+    return (
+        location.lat >= 0 &&
+        location.lat <= mapHeight &&
+        location.lng >= 0 &&
+        location.lng <= mapWidth
+    );
+}
 
-/* ========================================
-   7. MAP CLICK FUNCTION
-======================================== */
-
-// Custom marker styles
 function createMissionIcon(color, symbol) {
     return L.divIcon({
         className: "mission-marker",
+
         html: `
             <div style="
-                width: 32px;
-                height: 32px;
-                background: ${color};
-                border: 3px solid white;
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                color: white;
-                font-weight: bold;
-                font-size: 14px;
-                box-shadow: 0 2px 10px #0008;
+                width:32px;
+                height:32px;
+                background:${color};
+                border:3px solid white;
+                border-radius:50%;
+                display:flex;
+                align-items:center;
+                justify-content:center;
+                color:white;
+                font-weight:bold;
+                font-size:14px;
+                box-shadow:0 2px 10px #0008;
             ">${symbol}</div>
         `,
+
         iconSize: [32, 32],
         iconAnchor: [16, 16],
         popupAnchor: [0, -16]
@@ -135,237 +214,742 @@ function createMissionIcon(color, symbol) {
 
 const startIcon = createMissionIcon("#35b878", "S");
 const endIcon = createMissionIcon("#e05252", "D");
-const scienceIcon = createMissionIcon("#398be0", "★");
+const landingIcon = createMissionIcon("#f0b94b", "L");
 
-map.on("click", function (event) {
+// ========================================
+// BUTTON REFERENCES
+// ========================================
 
-    const location = event.latlng;
+const routeSetup =
+    document.getElementById("routeSetup");
 
-    updateCoordinates(location);
+const startRouteBtn =
+    document.getElementById("startRouteBtn");
 
-    // SCIENCE TARGET
-    if (selectingScienceTarget) {
+const selectStartBtn =
+    document.getElementById("selectStartBtn");
 
-        const marker = L.marker(location, {
-            icon: scienceIcon
-        })
-        .addTo(map)
-        .bindPopup("<b>Science Target</b><br>Research location");
+const selectEndBtn =
+    document.getElementById("selectEndBtn");
 
-        scienceMarkers.push(marker);
-        document.getElementById("scienceCount").textContent =
-    scienceMarkers.length;
+const routeBtn =
+    document.getElementById("routeBtn");
 
-        selectingScienceTarget = false;
+const landingBtn =
+    document.getElementById("landingBtn");
 
-        updateStatus("Science target added successfully.");
+// Hide the old selection buttons.
+// They are no longer needed.
 
+if (selectStartBtn) {
+    selectStartBtn.style.display = "none";
+}
+
+if (selectEndBtn) {
+    selectEndBtn.style.display = "none";
+}
+
+routeSetup.style.display = "none";
+
+// ========================================
+// MAP MODES
+// ========================================
+
+function setMapMode(mode, message) {
+    mapMode = mode;
+
+    startRouteBtn.style.outline = "";
+    landingBtn.style.outline = "";
+
+    if (mode === "start" || mode === "destination") {
+        startRouteBtn.style.outline =
+            "2px solid #f0b94b";
+    }
+
+    if (mode === "landing") {
+        landingBtn.style.outline =
+            "2px solid #f0b94b";
+    }
+
+    map.getContainer().style.cursor =
+        mode === "none" ? "" : "crosshair";
+
+    if (message) {
+        updateStatus(message);
+    }
+}
+
+// ========================================
+// ROUTE COMPARISON PANEL
+// ========================================
+
+const routePanel = document.createElement("div");
+
+routePanel.id = "routeComparison";
+
+routePanel.style.cssText = `
+    position:absolute;
+    right:15px;
+    top:15px;
+    z-index:1000;
+    width:265px;
+    max-width:calc(100% - 30px);
+    max-height:70vh;
+    overflow-y:auto;
+    background:rgba(18,25,35,0.94);
+    color:white;
+    padding:14px;
+    border-radius:12px;
+    box-shadow:0 4px 20px #0008;
+    font-family:Arial,sans-serif;
+    font-size:13px;
+    display:none;
+`;
+
+const mapContainer = document.getElementById("map");
+
+if (getComputedStyle(mapContainer).position === "static") {
+    mapContainer.style.position = "relative";
+}
+
+mapContainer.appendChild(routePanel);
+
+L.DomEvent.disableClickPropagation(routePanel);
+L.DomEvent.disableScrollPropagation(routePanel);
+
+function clearRoutes() {
+    Object.values(routeLines).forEach(line => {
+        map.removeLayer(line);
+    });
+
+    routeLines = {};
+    routeResults = {};
+
+    routePanel.innerHTML = "";
+    routePanel.style.display = "none";
+
+    document.getElementById("routeDistance").textContent =
+        "Not calculated";
+}
+
+function selectRoute(routeName) {
+    const route = routeResults[routeName];
+
+    if (!route || !routeLines[routeName]) {
         return;
     }
 
-    // MISSION START
-    if (startPoint === null) {
+    selectedRoute = routeName;
 
+    Object.entries(routeLines).forEach(([name, line]) => {
+        const active = name === routeName;
+
+        line.setStyle({
+            weight: active ? 7 : 4,
+            opacity: active ? 1 : 0.65
+        });
+
+        if (active) {
+            line.bringToFront();
+        }
+    });
+
+    const style = ROUTE_STYLES[routeName];
+
+    document.getElementById("routeDistance").textContent =
+        `${route.distance_m} metres`;
+
+    updateStatus(
+        `${style.name} | ` +
+        `Distance: ${route.distance_m} m | ` +
+        `Max slope: ${route.max_slope_deg}° | ` +
+        `Time: ${route.estimated_time_min} min`
+    );
+
+    renderRouteComparison();
+}
+
+function renderRouteComparison() {
+    routePanel.innerHTML = "";
+
+    const heading = document.createElement("h3");
+
+    heading.textContent = "MARS EVA ROUTES";
+    heading.style.margin = "0 0 10px";
+
+    routePanel.appendChild(heading);
+
+    const subtitle = document.createElement("p");
+
+    subtitle.textContent =
+        "Click a route to highlight it.";
+
+    subtitle.style.color = "#b8c5d1";
+
+    routePanel.appendChild(subtitle);
+
+    Object.entries(ROUTE_STYLES).forEach(([name, style]) => {
+        const route = routeResults[name];
+
+        const card = document.createElement("button");
+        card.type = "button";
+
+        const active = selectedRoute === name;
+
+        card.style.cssText = `
+            display:block;
+            width:100%;
+            text-align:left;
+            margin-bottom:9px;
+            padding:11px;
+            border-radius:8px;
+            border:2px solid ${
+                active ? style.color : "#45515e"
+            };
+            background:${
+                active ? "#303c49" : "#222c37"
+            };
+            color:white;
+            cursor:${route ? "pointer" : "default"};
+            font-family:inherit;
+            font-size:12px;
+            line-height:1.7;
+        `;
+
+        if (!route || !routeLines[name]) {
+            card.disabled = true;
+
+            card.textContent =
+                `${style.name} — No route found`;
+        } else {
+            const title = document.createElement("div");
+
+            title.textContent =
+                `${active ? "✓ " : ""}${style.name}`;
+
+            title.style.cssText = `
+                color:${style.color};
+                font-weight:bold;
+                font-size:14px;
+            `;
+
+            const details = document.createElement("div");
+
+            details.textContent =
+                `Distance: ${route.distance_m} m`;
+
+            const time = document.createElement("div");
+
+            time.textContent =
+                `Time: ${route.estimated_time_min} min`;
+
+            const slope = document.createElement("div");
+
+            slope.textContent =
+                `Maximum slope: ${route.max_slope_deg}°`;
+
+            const ascent = document.createElement("div");
+
+            ascent.textContent =
+                `Total ascent: ${route.ascent_m} m`;
+
+            const effort = document.createElement("div");
+
+            effort.textContent =
+                `Effort score: ${route.effort_score}`;
+
+            card.append(
+                title,
+                details,
+                time,
+                slope,
+                ascent,
+                effort
+            );
+
+            card.addEventListener("click", () => {
+                selectRoute(name);
+            });
+        }
+
+        routePanel.appendChild(card);
+    });
+
+    const note = document.createElement("p");
+
+    note.style.cssText =
+        "color:#b8c5d1;font-size:11px;line-height:1.5;";
+
+    note.textContent =
+        "Routes use a 10° slope restriction. " +
+        "Travel time and effort are simplified estimates.";
+
+    routePanel.appendChild(note);
+
+    routePanel.style.display = "block";
+}
+
+// ========================================
+// START ROUTE BUTTON
+// ========================================
+
+startRouteBtn.addEventListener("click", () => {
+
+    // Clear the previous route selection.
+    startPoint = null;
+    endPoint = null;
+
+    if (startMarker) {
+        map.removeLayer(startMarker);
+        startMarker = null;
+    }
+
+    if (endMarker) {
+        map.removeLayer(endMarker);
+        endMarker = null;
+    }
+
+    clearRoutes();
+
+    document.getElementById("startCoordinates").textContent =
+        "Not selected";
+
+    document.getElementById("endCoordinates").textContent =
+        "Not selected";
+
+    document.getElementById("coordinates").textContent =
+        "Not selected";
+
+    // Show only the Find Route button.
+    routeSetup.style.display = "block";
+
+    // Wait for the first map click.
+    setMapMode(
+        "start",
+        "Click the Mars map to select your START location."
+    );
+});
+
+// ========================================
+// LANDING SITE ANALYZER
+// ========================================
+
+function updateLandingResult(data) {
+    const statusElement =
+        document.getElementById("landingStatus");
+
+    statusElement.textContent =
+        data.label || "Needs Further Assessment";
+
+    document.getElementById("landingCoordinates").textContent =
+        `Row ${data.row}, Column ${data.col}`;
+
+    document.getElementById("landingAvgSlope").textContent =
+        data.average_slope_deg == null
+            ? "Unavailable"
+            : `${data.average_slope_deg}°`;
+
+    document.getElementById("landingMaxSlope").textContent =
+        data.max_slope_deg == null
+            ? "Unavailable"
+            : `${data.max_slope_deg}°`;
+
+    document.getElementById("landingRoughness").textContent =
+        data.roughness_m == null
+            ? "Unavailable"
+            : `${data.roughness_m} m`;
+
+    document.getElementById("landingCoverage").textContent =
+        data.coverage_percent == null
+            ? "Unavailable"
+            : `${data.coverage_percent}%`;
+
+    document.getElementById("landingRadius").textContent =
+        data.landing_radius_m == null
+            ? "50 metres"
+            : `${data.landing_radius_m} metres`;
+
+    document.getElementById("landingReasons").textContent =
+        (data.reasons || []).join(" ") ||
+        "No additional notes.";
+
+    if (data.status === "passes_screening") {
+        statusElement.style.color = "#35b878";
+    } else if (data.status === "fails_screening") {
+        statusElement.style.color = "#e05252";
+    } else {
+        statusElement.style.color = "#f0b94b";
+    }
+}
+
+async function analyzeLandingLocation(location) {
+    const [row, col] = toGridCoordinates(location);
+
+    const requestNumber = ++landingRequestNumber;
+
+    updateStatus("Analyzing landing terrain...");
+
+    document.getElementById("landingStatus").textContent =
+        "Analyzing...";
+
+    try {
+        const response = await fetch(LANDING_API, {
+            method: "POST",
+
+            headers: {
+                "Content-Type": "application/json"
+            },
+
+            body: JSON.stringify({ row, col })
+        });
+
+        const data = await response.json();
+
+        if (requestNumber !== landingRequestNumber) {
+            return;
+        }
+
+        if (!response.ok) {
+            throw new Error(
+                data.error || "Landing analysis failed."
+            );
+        }
+
+        updateLandingResult(data);
+
+        if (data.status === "passes_screening") {
+            updateStatus(
+                "Landing terrain passes preliminary screening."
+            );
+        } else if (data.status === "fails_screening") {
+            updateStatus(
+                "Landing terrain fails preliminary screening."
+            );
+        } else {
+            updateStatus(
+                "Landing site needs further assessment."
+            );
+        }
+
+        document.getElementById("landingSection")
+            .scrollIntoView({
+                behavior: "smooth",
+                block: "start"
+            });
+
+    } catch (error) {
+        if (requestNumber !== landingRequestNumber) {
+            return;
+        }
+
+        console.error("Landing analysis error:", error);
+
+        document.getElementById("landingStatus").textContent =
+            "Analysis error";
+
+        document.getElementById("landingStatus").style.color =
+            "#e05252";
+
+        document.getElementById("landingReasons").textContent =
+            error.message;
+
+        updateStatus(
+            "Landing analysis error: " + error.message
+        );
+    }
+}
+
+function placeLandingSite(location) {
+    if (landingMarker) {
+        map.removeLayer(landingMarker);
+    }
+
+    if (landingCircle) {
+        map.removeLayer(landingCircle);
+    }
+
+    landingMarker = L.marker(location, {
+        icon: landingIcon,
+        bubblingMouseEvents: false
+    }).addTo(map);
+
+    landingMarker.bindPopup("Selected landing site");
+
+    // 50 metres / 5 metres per pixel = 10 map units.
+    landingCircle = L.circle(location, {
+        radius: 10,
+        color: "#f0b94b",
+        fillColor: "#f0b94b",
+        fillOpacity: 0.12,
+        weight: 2,
+        interactive: false
+    }).addTo(map);
+
+    setMapMode("none");
+
+    analyzeLandingLocation(location);
+}
+
+landingBtn.addEventListener("click", () => {
+    setMapMode(
+        "landing",
+        "Click the Mars map to analyze a landing site."
+    );
+});
+
+// ========================================
+// MAP CLICK HANDLER
+// ========================================
+
+map.on("click", event => {
+    const location = event.latlng;
+
+    // No tool selected = do nothing.
+    if (mapMode === "none") {
+        return;
+    }
+
+    if (!isInsideMap(location)) {
+        updateStatus(
+            "Please click inside the Mars map."
+        );
+        return;
+    }
+
+    document.getElementById("coordinates").textContent =
+        `Coordinates: ${formatCoordinates(location)}`;
+
+    // FIRST CLICK: START LOCATION
+    if (mapMode === "start") {
         startPoint = location;
-        document.getElementById("startCoordinates").textContent =
-    formatCoordinates(location);
 
         if (startMarker) {
             map.removeLayer(startMarker);
         }
 
         startMarker = L.marker(location, {
-            icon: startIcon
-        })
-        .addTo(map)
-        .bindPopup("<b>MISSION START</b>");
+            icon: startIcon,
+            bubblingMouseEvents: false
+        }).addTo(map);
 
-        startMarker.openPopup();
+        startMarker.bindPopup("<b>MISSION START</b>");
 
-        updateStatus("Start point selected. Click another location for the destination.");
+        document.getElementById("startCoordinates").textContent =
+            formatCoordinates(location);
 
+        clearRoutes();
+
+        // Automatically wait for destination.
+        setMapMode(
+            "destination",
+            "Start selected! Click another map location for DESTINATION."
+        );
+
+        return;
     }
 
-    // MISSION DESTINATION
-    else {
-
+    // SECOND CLICK: DESTINATION
+    if (mapMode === "destination") {
         endPoint = location;
-        document.getElementById("endCoordinates").textContent =
-    formatCoordinates(location);
 
         if (endMarker) {
             map.removeLayer(endMarker);
         }
 
         endMarker = L.marker(location, {
-            icon: endIcon
-        })
-        .addTo(map)
-        .bindPopup("<b>MISSION DESTINATION</b>");
+            icon: endIcon,
+            bubblingMouseEvents: false
+        }).addTo(map);
 
-        endMarker.openPopup();
+        endMarker.bindPopup("<b>MISSION DESTINATION</b>");
 
-        updateStatus("Destination selected. You can now create a demo route.");
+        document.getElementById("endCoordinates").textContent =
+            formatCoordinates(location);
 
+        clearRoutes();
+
+        // Stop accepting route markers.
+        setMapMode(
+            "none",
+            "Destination selected! Click Find Route."
+        );
+
+        return;
     }
 
+    // LANDING SITE SELECTION
+    if (mapMode === "landing") {
+        placeLandingSite(location);
+        return;
+    }
 });
 
+// ========================================
+// FIND ROUTE
+// ========================================
 
-// 8. TERRAIN LAYER BUTTONS
-
-function changeLayer(newLayer) {
-
-    if (currentLayer) {
-        map.removeLayer(currentLayer);
+routeBtn.addEventListener("click", async () => {
+    if (!startPoint || !endPoint) {
+        updateStatus(
+            "Please click Start Route, then select two map locations."
+        );
+        return;
     }
 
-    currentLayer = newLayer;
+    if (routeRequestInProgress) {
+        return;
+    }
 
-    currentLayer.addTo(map);
+    setMapMode("none");
 
-}
+    routeRequestInProgress = true;
+    routeBtn.disabled = true;
 
-
-// Photo button
-
-document.getElementById("photoBtn").addEventListener("click", function () {
-    changeLayer(photoLayer);
-    updateStatus("Photo layer selected.");
-});
-
-
-// Height button
-
-document.getElementById("heightBtn").addEventListener("click", function () {
-    changeLayer(heightLayer);
-    updateStatus("Height layer selected.");
-});
-
-
-// Thermal button
-
-document.getElementById("thermalBtn").addEventListener("click", function () {
-    changeLayer(thermalLayer);
     updateStatus(
-        "THEMIS Nighttime IR — resampled to 5 m grid (native ~100 m/pixel). " +
-        "Contextual infrared imagery, not calibrated temperature or a hazard map."
+        "Calculating three Mars EVA routes..."
     );
-});
-
-
-// 9. ADD SCIENCE TARGET BUTTON
-
-document.getElementById("targetBtn").addEventListener("click", function () {
-
-    selectingScienceTarget = true;
-
-    updateStatus("Click anywhere on the map to add a science target.");
-
-});
-
-
-// 10. DEMO ROUTE BUTTON
-
-document.getElementById("routeBtn").addEventListener("click", async function () {
 
     try {
-        const response = await fetch("route.json?t=" + Date.now());
+        const response = await fetch(ROUTE_API, {
+            method: "POST",
 
-        if (!response.ok) {
-            throw new Error("Could not find route.json");
-        }
+            headers: {
+                "Content-Type": "application/json"
+            },
+
+            body: JSON.stringify({
+                start: toGridCoordinates(startPoint),
+                end: toGridCoordinates(endPoint)
+            })
+        });
 
         const data = await response.json();
 
-        if (!data.path || data.path.length < 2) {
-            updateStatus("No valid A* route found.");
-            return;
+        if (!response.ok) {
+            throw new Error(
+                data.error || "Route calculation failed."
+            );
         }
 
-        if (!data.grid_width || !data.grid_height) {
-            updateStatus("Route file is missing grid dimensions.");
-            return;
+        if (!data.routes) {
+            throw new Error(
+                "Backend did not return route options."
+            );
         }
 
-        const points = data.path.map(([row, col]) => {
-            const lat = (data.grid_height - (row + 0.5)) * (mapHeight / data.grid_height);
-            const lng = (col + 0.5) * (mapWidth / data.grid_width);
-
-            return [lat, lng];
-        });
-
-        if (routeLine) {
-            map.removeLayer(routeLine);
+        if (!data.grid_height || !data.grid_width) {
+            throw new Error(
+                "Missing route grid dimensions."
+            );
         }
 
-        routeLine = L.polyline(points, {
-            color: "#00ff88",
-            weight: 4
-        }).addTo(map);
+        clearRoutes();
 
-        map.fitBounds(routeLine.getBounds(), {
-            padding: [40, 40]
-        });
+        routeResults = data.routes;
 
-        document.getElementById("routeDistance").textContent =
-            data.distance_m + " metres";
+        const allPoints = [];
+
+        Object.entries(ROUTE_STYLES).forEach(
+            ([name, style]) => {
+                const route = routeResults[name];
+
+                if (
+                    !route ||
+                    !Array.isArray(route.path) ||
+                    route.path.length === 0
+                ) {
+                    return;
+                }
+
+                const points = route.path.map(
+                    ([row, col]) => gridToMap(
+                        row,
+                        col,
+                        data.grid_height,
+                        data.grid_width
+                    )
+                );
+
+                allPoints.push(...points);
+
+                const line = L.polyline(points, {
+                    color: style.color,
+                    weight: 4,
+                    opacity: 0.75,
+                    bubblingMouseEvents: false
+                }).addTo(map);
+
+                line.bindPopup(
+                    `<b>${style.name}</b><br>` +
+                    `Distance: ${route.distance_m} m<br>` +
+                    `Max slope: ${route.max_slope_deg}°`
+                );
+
+                line.on("click", () => {
+                    selectRoute(name);
+                });
+
+                routeLines[name] = line;
+            }
+        );
+
+        if (Object.keys(routeLines).length === 0) {
+            throw new Error(
+                "No valid routes were returned."
+            );
+        }
+
+        if (allPoints.length > 1) {
+            map.fitBounds(
+                L.latLngBounds(allPoints),
+                { padding: [40, 40] }
+            );
+        }
+
+        const firstAvailable = routeLines.safest
+            ? "safest"
+            : Object.keys(routeLines)[0];
+
+        selectRoute(firstAvailable);
+
+        const count = Object.keys(routeLines).length;
 
         updateStatus(
-            "A* route displayed! Distance: " + data.distance_m +
-            " m | Maximum slope: " + data.max_slope_deg + "°"
+            `${count} route option(s) calculated. ` +
+            "Select one from the comparison panel."
         );
 
     } catch (error) {
-        console.error(error);
-        updateStatus("Could not load route.json. Check that the Python script has been run.");
+        console.error("Route error:", error);
+
+        updateStatus(
+            "Route error: " + error.message
+        );
+
+    } finally {
+        routeRequestInProgress = false;
+        routeBtn.disabled = false;
     }
-
 });
 
-// 11. RESET BUTTON
+// ========================================
+// RESET
+// ========================================
 
-document.getElementById("resetBtn").addEventListener("click", function () {
+document.getElementById("resetBtn").addEventListener(
+    "click",
+    () => {
+        window.location.reload();
+    }
+);
 
-    if (startMarker) map.removeLayer(startMarker);
-    if (endMarker) map.removeLayer(endMarker);
-    if (routeLine) map.removeLayer(routeLine);
+// ========================================
+// INITIAL STATE
+// ========================================
 
-    scienceMarkers.forEach(marker => {
-        map.removeLayer(marker);
-    });
+setMapMode(
+    "none",
+    "Mars map ready. Click Start Route or Analyze Landing Site."
+);
 
-    startPoint = null;
-    endPoint = null;
-
-    startMarker = null;
-    endMarker = null;
-
-    routeLine = null;
-    scienceMarkers = [];
-    document.getElementById("routeDistance").textContent =
-    "Not calculated";
-    document.getElementById("startCoordinates").textContent = "Not selected";
-document.getElementById("endCoordinates").textContent = "Not selected";
-document.getElementById("scienceCount").textContent = "0";
-
-    
-    
-    
-    
-
-    selectingScienceTarget = false;
-
-    document.getElementById("coordinates").textContent =
-        "Coordinates: Not selected";
-
-    map.fitBounds(bounds);
-
-    updateStatus("Map reset. Select a new starting location.");
-
-});
-
-
-// 12. INITIAL MESSAGE
-
-updateStatus("Mars map ready. Select a starting location.");
+console.log("Mars EVA Pathfinder initialized.");
