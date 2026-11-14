@@ -158,105 +158,107 @@ def find_route(start, end, height_grid, science_grid, weights):
 
     return []
 
+if __name__ == "__main__":
+    # -----------------------------------------
+    # LOAD REAL NASA HIRISE ELEVATION DATA
+    # -----------------------------------------
 
-# -----------------------------------------
-# LOAD REAL NASA HIRISE ELEVATION DATA
-# -----------------------------------------
+    with rasterio.open("processed/elevation_5m.tif") as src:
+        elevation = src.read(1).astype(float)
 
-with rasterio.open("processed/elevation_5m.tif") as src:
-    elevation = src.read(1)
+        if src.nodata is not None:
+            elevation[elevation == src.nodata] = np.nan
 
-# Use the valid 100x100 Mars terrain section
-real_heights = elevation[50:150, 700:800]
+    # Use the valid 100x100 Mars terrain section
+    real_heights = elevation[50:150, 700:800]
 
-# No science bonuses yet
-science_grid = np.zeros(real_heights.shape)
+    # No science bonuses yet
+    science_grid = np.zeros(real_heights.shape)
 
-# Start and end in local pixel coordinates
-test_start = (10, 10)
-test_end = (90, 90)
+    # Start and end in local pixel coordinates
+    test_start = (10, 10)
+    test_end = (90, 90)
 
-test_weights = {
-    "terrain": 1.5,
-    "distance": 1.0,
-    "science": 0.0
-}
+    test_weights = {
+        "terrain": 1.5,
+        "distance": 1.0,
+        "science": 0.0
+    }
 
-print("Running A* on REAL NASA Mars elevation data...")
+    print("Running A* on REAL NASA Mars elevation data...")
 
-test_path = find_route(
-    test_start,
-    test_end,
-    real_heights,
-    science_grid,
-    test_weights
-)
+    test_path = find_route(
+        test_start,
+        test_end,
+        real_heights,
+        science_grid,
+        test_weights
+    )
 
-print("Route found:", len(test_path) > 0)
-print("Number of steps:", len(test_path))
-print("Path coordinates:", test_path)
+    print("Route found:", len(test_path) > 0)
+    print("Number of steps:", len(test_path))
+    print("Path coordinates:", test_path)
 
+    # -----------------------------------------
+    # ANALYZE ROUTE SLOPES
+    # -----------------------------------------
 
-# -----------------------------------------
-# ANALYZE ROUTE SLOPES
-# -----------------------------------------
+    if len(test_path) > 1:
+        slopes = []
+        total_distance_m = 0
 
-if len(test_path) > 1:
-    slopes = []
-    total_distance_m = 0
+        for a, b in zip(test_path[:-1], test_path[1:]):
+            height_difference = abs(
+                float(real_heights[b]) - float(real_heights[a])
+            )
 
-    for a, b in zip(test_path[:-1], test_path[1:]):
-        height_difference = abs(
-            float(real_heights[b]) - float(real_heights[a])
-        )
+            distance_m = (
+                np.hypot(b[0] - a[0], b[1] - a[1])
+                * PIXEL_SIZE_M
+            )
 
-        distance_m = (
-            np.hypot(b[0] - a[0], b[1] - a[1])
-            * PIXEL_SIZE_M
-        )
+            slope_degrees = np.degrees(
+                np.arctan(height_difference / distance_m)
+            )
 
-        slope_degrees = np.degrees(
-            np.arctan(height_difference / distance_m)
-        )
+            slopes.append(slope_degrees)
+            total_distance_m += distance_m
 
-        slopes.append(slope_degrees)
-        total_distance_m += distance_m
+        print("Route distance:", round(total_distance_m, 2), "metres")
+        print("Maximum route slope:", round(max(slopes), 2), "degrees")
+        print("Average route slope:", round(np.mean(slopes), 2), "degrees")
 
-    print("Route distance:", round(total_distance_m, 2), "metres")
-    print("Maximum route slope:", round(max(slopes), 2), "degrees")
-    print("Average route slope:", round(np.mean(slopes), 2), "degrees")
+    else:
+        print("No valid route found under the slope limit.")
 
-else:
-    print("No valid route found under the slope limit.")
+    # -----------------------------------------
+    # EXPORT ROUTE FOR FRONTEND MAP
+    # -----------------------------------------
 
-# -----------------------------------------
-# EXPORT ROUTE FOR FRONTEND MAP
-# -----------------------------------------
+    from pathlib import Path
 
-from pathlib import Path
+    if len(test_path) > 1:
+        # Convert crop-local coordinates to full raster coordinates
+        full_grid_path = [
+            [int(row + 50), int(col + 700)]
+            for row, col in test_path
+        ]
 
-if len(test_path) > 1:
-    # Convert crop-local coordinates to full raster coordinates
-    full_grid_path = [
-        [int(row + 50), int(col + 700)]
-        for row, col in test_path
-    ]
+        route_data = {
+            "path": full_grid_path,
+            "distance_m": round(float(total_distance_m), 2),
+            "max_slope_deg": round(float(max(slopes)), 2),
+            "avg_slope_deg": round(float(np.mean(slopes)), 2),
+            "grid_width": int(elevation.shape[1]),
+            "grid_height": int(elevation.shape[0])
+        }
 
-    route_data = {
-    "path": full_grid_path,
-    "distance_m": round(float(total_distance_m), 2),
-    "max_slope_deg": round(float(max(slopes)), 2),
-    "avg_slope_deg": round(float(np.mean(slopes)), 2),
-    "grid_width": int(elevation.shape[1]),
-    "grid_height": int(elevation.shape[0])
-}
+        output_path = Path("frontend/route.json")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    output_path = Path("frontend/route.json")
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+        with output_path.open("w", encoding="utf-8") as f:
+            json.dump(route_data, f, indent=2)
 
-    with output_path.open("w", encoding="utf-8") as f:
-        json.dump(route_data, f, indent=2)
-
-    print("Route saved to:", output_path)
-else:
-    print("No route to export.")
+        print("Route saved to:", output_path)
+    else:
+        print("No route to export.")
