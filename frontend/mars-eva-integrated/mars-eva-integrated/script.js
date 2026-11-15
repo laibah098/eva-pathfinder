@@ -9,7 +9,7 @@
 // 1. SETTINGS
 
 // Where the Flask server (backend/app.py) is running.
-const API_URL = "https://eva-pathfinder.onrender.com";
+const API_URL = "https://eva-pathfinder-api.onrender.com";
 
 // The map is exactly the size of the elevation grid:
 // 1 map unit = 1 pixel = 5 metres.
