@@ -1,0 +1,57 @@
+﻿import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+const box=document.getElementById('terrain3d'),status=document.getElementById('status');
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x111a28);
+scene.fog=new THREE.FogExp2(0x111a28,0.000015);
+const camera=new THREE.PerspectiveCamera(55,1,0.5,100000);
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));box.appendChild(renderer.domElement);
+const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.maxPolarAngle=Math.PI*.495;
+scene.add(new THREE.HemisphereLight(0xe9f0ff,0x7e3421,2));const sun=new THREE.DirectionalLight(0xffd9b4,2.5);sun.position.set(3000,9000,3000);scene.add(sun);
+let mesh=null,width=6820,depth=13535,heights=null,cols=0,rows=0,minElev=0,scaleY=2,routeData={},lines=[],playing=false,progress=0,walkPath=[],last=0;
+let saved=null;try{saved=JSON.parse(sessionStorage.getItem('evaSelectedRoute')||'null')}catch{}
+const names=['safest','fastest','energy'];const colors={safest:0x56e2a2,fastest:0x5eb6ff,energy:0xffad57};
+const texLoader=new THREE.TextureLoader();
+function resize(){const w=box.clientWidth,h=box.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()}window.addEventListener('resize',resize);resize();
+function home(){
+    playing = false;
+    controls.enabled = true;
+
+    camera.position.set(0, 12000, 14000);
+    controls.target.set(0, 0, 0);
+
+    camera.near = 1;
+    camera.far = 100000;
+    camera.updateProjectionMatrix();
+
+    controls.update();
+    status.textContent = 'Camera reset. Drag to rotate, scroll to zoom.';
+}
+document.getElementById('reset').onclick=home;
+function world(row,col,gh=2707,gw=1364){return new THREE.Vector3(((col+.5)/gw-.5)*width,0,((row+.5)/gh-.5)*depth)}
+function surface(x,z){if(!heights)return 0;const c=Math.max(0,Math.min(cols-1,Math.round((x/width+.5)*(cols-1))));const r=Math.max(0,Math.min(rows-1,Math.round((z/depth+.5)*(rows-1))));const v=heights[r][c];return v==null?0:(v-minElev)*scaleY}
+function addRoutes(){for(const o of lines){scene.remove(o);o.geometry.dispose();o.material.dispose()}lines=[];
+for(const name of names){const route=routeData[name];if(!route?.path?.length)continue;const gh=route.gridHeight||2707,gw=route.gridWidth||1364;const pts=route.path.map(([r,c])=>{const p=world(r,c,gh,gw);p.y=surface(p.x,p.z)+9;return p});const geom=new THREE.BufferGeometry().setFromPoints(pts);const line=new THREE.Line(geom,new THREE.LineBasicMaterial({color:colors[name]}));scene.add(line);lines.push(line)}
+}
+function selectRoute(name){const route=routeData[name];if(!route?.path?.length){status.textContent='No route available. Plan a route in 2D first.';return false}walkPath=route.path.map(([r,c])=>{const p=world(r,c,route.gridHeight,route.gridWidth);p.y=surface(p.x,p.z)+3;return p});progress=0;last=0;return walkPath.length>1}
+const select=document.getElementById('route');select.onchange=()=>{playing=false;controls.enabled=true;selectRoute(select.value)};
+document.getElementById('play').onclick=()=>{if(!walkPath.length||progress>=walkPath.length-1){if(!selectRoute(select.value))return}playing=true;controls.enabled=false;status.textContent='Astronaut POV playing';};
+document.getElementById('pause').onclick=()=>{playing=false;status.textContent='POV paused';};
+const speed=document.getElementById('speed');speed.oninput=()=>document.getElementById('speedText').textContent=speed.value+'Ã—';
+function render(t){requestAnimationFrame(render);const dt=Math.min((t-last)/1000,.08);last=t;if(playing&&walkPath.length>1){progress=Math.min(progress+dt*12*Number(speed.value),walkPath.length-1);const i=Math.min(Math.floor(progress),walkPath.length-2),f=progress-i;const here=walkPath[i].clone().lerp(walkPath[i+1],f);const ahead=walkPath[Math.min(i+8,walkPath.length-1)].clone();ahead.y=here.y+2;camera.position.copy(here);camera.lookAt(ahead);if(progress>=walkPath.length-1){playing=false;status.textContent='Destination reached'}}else if(controls.enabled)controls.update();for(const l of lines)l.visible=!playing;renderer.render(scene,camera)}requestAnimationFrame(render);
+async function layer(name){if(!mesh)return;try{const texture=await texLoader.loadAsync('/images/mars-'+name+'.png');texture.colorSpace=THREE.SRGBColorSpace;mesh.material.map=texture;mesh.material.needsUpdate=true;status.textContent=name+' terrain layer'}catch(e){status.textContent='Layer missing: copy your existing mars-'+name+'.png into frontend/images/'}}
+for(const n of ['photo','height','thermal'])document.getElementById(n).onclick=()=>layer(n);
+async function load(){try{const res=await fetch("/mars3d/mars3d/terrain.json");if(!res.ok)throw Error('Missing original terrain.json');const d=await res.json();cols=d.width;rows=d.height;heights=d.heights;width=d.sourceWidth*d.pixelSizeMeters;depth=d.sourceHeight*d.pixelSizeMeters;minElev=d.minElevation;
+const g=new THREE.PlaneGeometry(width,depth,cols-1,rows-1);g.rotateX(-Math.PI/2);const pos=g.attributes.position;for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){const v=heights[r][c];pos.setY(r*cols+c,v==null?0:(v-minElev)*scaleY)}const idx=g.getIndex().array,filtered=[];for(let i=0;i<idx.length;i+=3){const a=idx[i],b=idx[i+1],c=idx[i+2];if(heights[Math.floor(a/cols)][a%cols]!=null&&heights[Math.floor(b/cols)][b%cols]!=null&&heights[Math.floor(c/cols)][c%cols]!=null)filtered.push(a,b,c)}g.setIndex(filtered);g.computeVertexNormals();mesh=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:0xbb6b42,side:THREE.DoubleSide,roughness:1}));scene.add(mesh);home();await layer('photo');
+if (saved?.path) {
+    if (saved.allRoutes) {
+        Object.assign(routeData, saved.allRoutes);
+    }
+
+    routeData[saved.name] = {
+        path: saved.path,
+        gridHeight: saved.gridHeight,
+        gridWidth: saved.gridWidth
+    };
+select.value=saved.name;addRoutes();selectRoute(saved.name);status.textContent='Selected '+saved.name+' route loaded. Press Play POV.'}else status.textContent='Open the 2D planner, calculate a route, and choose Explore in 3D.';
+}catch(e){console.error(e);status.textContent='Missing elevation data. Keep your original frontend/mars3d/mars3d/terrain.json in place.';home()}}load();
+

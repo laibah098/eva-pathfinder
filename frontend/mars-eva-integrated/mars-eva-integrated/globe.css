@@ -1,0 +1,569 @@
+/* ============================================================
+   MARS EVA PATHFINDER — ORBIT VIEW
+   Styles for the 3D globe that sits behind the whole page.
+   Everything here is scoped to .orbit.
+   ============================================================ */
+
+@import url("https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..700&display=swap");
+
+
+/* ------------------------------------------------------------
+   1. Colours and type
+   ------------------------------------------------------------ */
+
+.orbit {
+    --orbit-ink: #f3ece4;                     /* dust white */
+    --orbit-dim: #a69c92;                     /* settled dust */
+    --orbit-sky: #7fb8f5;                     /* Martian-sunset blue */
+    --orbit-line: rgba(243, 236, 228, 0.22);
+    --orbit-font: "Archivo", "Helvetica Neue", Arial, sans-serif;
+}
+
+
+/* ------------------------------------------------------------
+   2. Reset — keeps page styles out of the globe screen
+   ------------------------------------------------------------ */
+
+.orbit,
+.orbit * {
+    box-sizing: border-box;
+}
+
+.orbit h1,
+.orbit h2,
+.orbit p,
+.orbit dl,
+.orbit dt,
+.orbit dd,
+.orbit button {
+    all: unset;
+}
+
+
+/* ------------------------------------------------------------
+   3. The full-screen layer behind the page
+   ------------------------------------------------------------ */
+
+.orbit {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    background: #000;
+    color: var(--orbit-ink);
+    font-family: var(--orbit-font);
+    font-size: 16px;
+    line-height: 1.5;
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+}
+
+.orbit .orbit__tag[hidden] {
+    display: none;
+}
+
+/* Darkens the lower edge so text stays readable over the planet. */
+.orbit::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0 0;
+    z-index: 1;
+    height: 46%;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.82), rgba(0, 0, 0, 0));
+    pointer-events: none;
+    transition: opacity 0.8s ease;
+}
+
+/* On wide screens, darkens the left edge too, for when you zoom in. */
+@media (min-width: 900px) {
+    .orbit::before {
+        content: "";
+        position: absolute;
+        inset: 0 auto 0 0;
+        z-index: 1;
+        width: 46%;
+        background: linear-gradient(to right, rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0.55) 45%, rgba(0, 0, 0, 0));
+        pointer-events: none;
+        transition: opacity 0.8s ease;
+    }
+}
+
+.orbit .orbit__canvas {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: grab;
+    touch-action: none;
+    opacity: 0;
+    transition: opacity 1.4s ease, filter 1.2s ease;
+}
+
+.orbit.is-ready .orbit__canvas {
+    opacity: 1;
+}
+
+.orbit.is-dragging .orbit__canvas {
+    cursor: grabbing;
+}
+
+.orbit .orbit__canvas.is-over-site {
+    cursor: pointer;
+}
+
+.orbit .orbit__canvas:focus-visible {
+    outline: 2px solid var(--orbit-sky);
+    outline-offset: -6px;
+}
+
+.orbit.is-unavailable .orbit__canvas {
+    display: none;
+}
+
+
+/* ------------------------------------------------------------
+   4. One load sequence: Mars arrives, then the words
+   ------------------------------------------------------------ */
+
+.orbit .orbit__brand,
+.orbit .orbit__site,
+.orbit .orbit__tools,
+.orbit .orbit__hint,
+.orbit .orbit__credit,
+.orbit .orbit__readout {
+    position: absolute;
+    z-index: 2;
+    opacity: 0;
+    transition: opacity 0.9s ease, transform 0.9s cubic-bezier(0.2, 0.7, 0.2, 1), visibility 0s;
+}
+
+.orbit .orbit__brand,
+.orbit .orbit__site {
+    transform: translateY(10px);
+}
+
+.orbit.is-ready .orbit__brand,
+.orbit.is-ready .orbit__site,
+.orbit.is-ready .orbit__tools,
+.orbit.is-ready .orbit__hint,
+.orbit.is-ready .orbit__credit,
+.orbit.is-ready .orbit__readout {
+    opacity: 1;
+    transform: none;
+}
+
+.orbit.is-ready .orbit__brand   { transition-delay: 0.5s; }
+.orbit.is-ready .orbit__site    { transition-delay: 0.9s; }
+.orbit.is-ready .orbit__tools,
+.orbit.is-ready .orbit__hint,
+.orbit.is-ready .orbit__credit,
+.orbit.is-ready .orbit__readout { transition-delay: 1.3s; }
+
+
+/* ------------------------------------------------------------
+   5. Planner open: Mars stays, softened, behind the window
+   ------------------------------------------------------------ */
+
+html.planner-open .orbit .orbit__brand,
+html.planner-open .orbit .orbit__site,
+html.planner-open .orbit .orbit__tools,
+html.planner-open .orbit .orbit__hint,
+html.planner-open .orbit .orbit__credit,
+html.planner-open .orbit .orbit__readout {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.4s ease, visibility 0s 0.4s;
+}
+
+html.planner-open .orbit::before,
+html.planner-open .orbit::after {
+    opacity: 0;
+}
+
+html.planner-open .orbit .orbit__canvas {
+    pointer-events: none;
+    filter: blur(1.5px) brightness(0.82);
+}
+
+
+/* ------------------------------------------------------------
+   6. Title
+   ------------------------------------------------------------ */
+
+.orbit .orbit__brand {
+    top: clamp(20px, 4.5vh, 44px);
+    left: clamp(20px, 4vw, 56px);
+    display: block;
+    pointer-events: none;
+}
+
+.orbit .orbit__title {
+    display: block;
+    font-stretch: 125%;
+    font-weight: 600;
+    font-size: clamp(1.25rem, 1.1rem + 0.9vw, 1.9rem);
+    line-height: 1.1;
+    letter-spacing: 0.01em;
+}
+
+.orbit .orbit__subtitle {
+    display: block;
+    margin-top: 0.4em;
+    color: var(--orbit-dim);
+    font-size: 0.9rem;
+}
+
+
+/* ------------------------------------------------------------
+   7. Site details
+   ------------------------------------------------------------ */
+
+.orbit .orbit__site {
+    left: clamp(20px, 4vw, 56px);
+    bottom: clamp(52px, 9vh, 88px);
+    display: block;
+    width: min(27rem, calc(100vw - 40px));
+    user-select: text;
+}
+
+.orbit .orbit__site-name {
+    display: block;
+    font-stretch: 112%;
+    font-weight: 500;
+    font-size: clamp(2rem, 1.5rem + 2.4vw, 3.5rem);
+    line-height: 1;
+    letter-spacing: -0.01em;
+}
+
+.orbit .orbit__site-summary {
+    display: block;
+    margin-top: 1rem;
+    max-width: 34em;
+    color: var(--orbit-ink);
+    font-size: 1rem;
+    line-height: 1.55;
+    opacity: 0.86;
+}
+
+.orbit .orbit__facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.9rem 1.75rem;
+    margin-top: 1.4rem;
+    padding-top: 1.1rem;
+    border-top: 1px solid var(--orbit-line);
+}
+
+.orbit .orbit__facts dt {
+    display: block;
+    color: var(--orbit-dim);
+    font-size: 0.8rem;
+}
+
+.orbit .orbit__facts dd {
+    display: block;
+    font-size: 0.95rem;
+    font-weight: 500;
+}
+
+.orbit .orbit__enter {
+    display: inline-block;
+    margin-top: 1.6rem;
+    padding: 0.85rem 1.5rem;
+    border-radius: 3px;
+    background: var(--orbit-ink);
+    color: #0a0706;
+    font-family: var(--orbit-font);
+    font-stretch: 108%;
+    font-weight: 600;
+    font-size: 1rem;
+    line-height: 1.2;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.orbit .orbit__enter:hover {
+    background: var(--orbit-sky);
+}
+
+.orbit .orbit__enter:focus-visible,
+.orbit .orbit__tool:focus-visible,
+.orbit .orbit__tag-button:focus-visible {
+    outline: 2px solid var(--orbit-sky);
+    outline-offset: 3px;
+}
+
+
+/* ------------------------------------------------------------
+   8. Label that follows the crater (click it to open the planner)
+   ------------------------------------------------------------ */
+
+.orbit .orbit__tag {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 2;
+    width: 0;
+    height: 0;
+}
+
+.orbit .orbit__leader {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.orbit .orbit__leader line {
+    stroke: var(--orbit-sky);
+    stroke-width: 1.25;
+}
+
+.orbit .orbit__tag-button {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    display: block;
+    transform: translate(var(--tag-x, 40px), var(--tag-y, -30px));
+    padding: 2px 4px;
+    white-space: nowrap;
+    cursor: pointer;
+    font-family: var(--orbit-font);
+    text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.9);
+}
+
+.orbit .orbit__tag--flip .orbit__tag-button {
+    left: auto;
+    right: 0;
+    text-align: right;
+}
+
+.orbit .orbit__tag-name {
+    display: block;
+    color: var(--orbit-ink);
+    font-stretch: 112%;
+    font-weight: 600;
+    font-size: 0.95rem;
+    line-height: 1.2;
+}
+
+.orbit .orbit__tag-coords {
+    display: block;
+    color: var(--orbit-dim);
+    font-size: 0.8rem;
+    line-height: 1.3;
+}
+
+.orbit .orbit__tag-action {
+    display: block;
+    margin-top: 2px;
+    color: var(--orbit-sky);
+    font-size: 0.8rem;
+    font-weight: 500;
+    line-height: 1.3;
+    text-decoration: underline;
+    text-decoration-color: transparent;
+    text-underline-offset: 3px;
+    transition: text-decoration-color 0.15s ease;
+}
+
+.orbit .orbit__tag-button:hover .orbit__tag-action,
+.orbit .orbit__tag.is-hover .orbit__tag-action {
+    text-decoration-color: var(--orbit-sky);
+}
+
+
+/* ------------------------------------------------------------
+   9. Zoom tools, cursor readout, hint, credit
+   ------------------------------------------------------------ */
+
+.orbit .orbit__tools {
+    right: clamp(16px, 3vw, 40px);
+    bottom: clamp(52px, 9vh, 88px);
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--orbit-line);
+    border-radius: 3px;
+    background: rgba(8, 5, 4, 0.55);
+    backdrop-filter: blur(8px);
+}
+
+.orbit .orbit__tool {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    color: var(--orbit-ink);
+    cursor: pointer;
+    transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.orbit .orbit__tool + .orbit__tool {
+    border-top: 1px solid var(--orbit-line);
+}
+
+.orbit .orbit__tool:hover {
+    color: var(--orbit-sky);
+    background: rgba(127, 184, 245, 0.1);
+}
+
+.orbit .orbit__tool svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+}
+
+.orbit .orbit__readout {
+    top: clamp(22px, 4.8vh, 48px);
+    right: clamp(16px, 3vw, 40px);
+    display: block;
+    min-height: 1.5em;
+    color: var(--orbit-ink);
+    font-size: 0.9rem;
+    text-align: right;
+    pointer-events: none;
+}
+
+.orbit .orbit__hint {
+    left: 50%;
+    bottom: clamp(52px, 9vh, 88px);
+    display: block;
+    translate: -50% 0;
+    max-width: 22rem;
+    color: var(--orbit-dim);
+    font-size: 0.875rem;
+    text-align: center;
+    pointer-events: none;
+}
+
+.orbit.has-interacted .orbit__hint {
+    opacity: 0;
+    transition-delay: 0s;
+    transition-duration: 0.6s;
+}
+
+.orbit .orbit__credit {
+    left: clamp(20px, 4vw, 56px);
+    right: clamp(16px, 3vw, 40px);
+    bottom: 16px;
+    display: block;
+    color: var(--orbit-dim);
+    font-size: 0.75rem;
+    pointer-events: none;
+}
+
+.orbit .orbit__credit--notice {
+    color: var(--orbit-ink);
+}
+
+
+/* ------------------------------------------------------------
+   10. Small screens
+   ------------------------------------------------------------ */
+
+@media (max-width: 899px) {
+
+    .orbit::after {
+        height: 62%;
+    }
+
+    .orbit .orbit__site {
+        bottom: 44px;
+    }
+
+    .orbit .orbit__site-summary {
+        font-size: 0.95rem;
+    }
+
+    .orbit .orbit__facts {
+        gap: 0.6rem 1.25rem;
+        margin-top: 1rem;
+        padding-top: 0.9rem;
+    }
+
+    .orbit .orbit__enter {
+        margin-top: 1.2rem;
+    }
+
+    .orbit .orbit__tools {
+        top: clamp(64px, 12vh, 96px);
+        bottom: auto;
+    }
+
+    .orbit .orbit__hint,
+    .orbit .orbit__readout {
+        display: none;
+    }
+}
+
+@media (max-height: 560px) {
+    .orbit .orbit__site-summary {
+        display: none;
+    }
+}
+
+
+/* ------------------------------------------------------------
+   11. Reduced motion, and instant start in the planner
+   ------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+    .orbit *,
+    .orbit::before,
+    .orbit::after {
+        transition-duration: 0.01s !important;
+        transition-delay: 0s !important;
+    }
+}
+
+html.no-transition .orbit *,
+html.no-transition .orbit::before,
+html.no-transition .orbit::after {
+    transition: none !important;
+}
+
+/* Mars moon identification tags */
+.orbit__moon-label {
+    position: absolute;
+    z-index: 20;
+    transform: translate(14px, -50%);
+    pointer-events: none;
+
+    padding: 7px 12px;
+    border: 1px solid rgba(255, 177, 112, 0.7);
+    border-radius: 6px;
+
+    background: rgba(15, 20, 30, 0.88);
+    color: #ffffff;
+
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+
+    box-shadow: 0 0 16px rgba(255, 132, 65, 0.2);
+    white-space: nowrap;
+}
+
+.orbit__moon-label::before {
+    content: "";
+    position: absolute;
+    left: -8px;
+    top: 50%;
+    width: 8px;
+    border-top: 1px solid #ffb170;
+}
+
+.orbit__moon-label[hidden] {
+    display: none;
+}
+

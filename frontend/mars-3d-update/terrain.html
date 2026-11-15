@@ -1,0 +1,193 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mars EVA | 3D Terrain</title><style>
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;background:#03040a;color:#f3ece4;font:14px system-ui,Arial;overflow:hidden}
+button,select,input{font:inherit}
+button,select{padding:9px 14px;background:rgba(48,58,72,.85);border:1px solid #677889;color:#fff;border-radius:8px;cursor:pointer}
+button:hover{background:#45546a}
+main{position:fixed;inset:0}
+#terrain3d{position:absolute;inset:0}#terrain3d canvas{display:block;width:100%;height:100%}
+.glass{background:rgba(8,13,22,.72);backdrop-filter:blur(8px);border:1px solid #3d566e;border-radius:14px}
+#top{position:absolute;top:14px;left:14px;right:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;pointer-events:none;z-index:6}
+#top>*{pointer-events:auto}
+#top a{color:#b5d9ff;text-decoration:none;padding:9px 14px}
+#top .title{padding:9px 14px;font-weight:600;letter-spacing:.5px}
+#top .sp{flex:1;pointer-events:none}
+.seg{display:flex;padding:4px;gap:4px}.seg button{border:0;background:transparent}.seg button.on{background:#ef783f;color:#10151d;font-weight:700}
+#reset{background:#9c3629;border-color:#c4523f}
+#dock{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);z-index:6;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:center;padding:12px 16px;max-width:96vw}
+#dock label{display:flex;gap:8px;align-items:center;color:#cfd8e3}
+#play{background:#1f8a6f;border-color:#3fd1a8;font-weight:700;font-size:15px;padding:10px 20px}
+#statusbar{position:absolute;bottom:92px;left:50%;transform:translateX(-50%);z-index:6;padding:7px 16px;color:#ffcd8b;font-size:13px;text-align:center;max-width:92vw;pointer-events:none}
+main[data-pov="1"] #dock{bottom:auto;top:84px}main[data-pov="1"] #statusbar{bottom:auto;top:150px}
+#loading{position:absolute;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;text-align:center;padding:30px;background:#03040a;color:#ffcd8b;font-size:17px;line-height:1.7}
+#loading[hidden]{display:none}
+#hint{position:absolute;top:70px;left:50%;transform:translateX(-50%);z-index:4;color:#a3b4c7;font-size:12px;padding:6px 14px;pointer-events:none}
+main[data-pov="1"] #hint{display:none}
+/* astronaut POV overlay */
+#pov{position:absolute;inset:0;pointer-events:none;display:none;overflow:hidden;z-index:3}
+main[data-pov="1"] #pov{display:block}
+#visor{position:absolute;inset:0;background:radial-gradient(ellipse 75% 70% at 50% 45%,transparent 55%,rgba(0,0,0,.55) 85%,rgba(0,0,0,.92) 100%);box-shadow:inset 0 0 0 10px #0b0d12,inset 0 0 60px 12px rgba(0,0,0,.7)}
+#visor::after{content:"";position:absolute;inset:0;background:linear-gradient(115deg,rgba(255,255,255,.07),transparent 28%,transparent 70%,rgba(255,190,140,.06))}
+.hand{position:absolute;bottom:-70px;width:min(36vw,360px);will-change:transform;filter:drop-shadow(0 8px 14px rgba(0,0,0,.6))}
+#handL{left:8%}#handR{right:8%}
+#hud{position:absolute;top:66px;left:50%;transform:translateX(-50%);min-width:min(86vw,420px);padding:8px 14px;background:rgba(8,13,22,.65);border:1px solid #5b7a96;border-radius:10px;font-size:12px;color:#cfe6ff;text-align:center}
+#hud .bar{height:5px;margin-top:6px;background:#26384b;border-radius:3px;overflow:hidden}#hud .bar i{display:block;height:100%;width:0;background:#56e2a2}
+main[data-hands="0"] .hand{display:none}
+@media(max-width:700px){#top .title{display:none}}
+
+/* ===== IMMERSIVE ASTRONAUT HELMET POV ===== */
+
+#helmetVisor {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  pointer-events: none;
+  display: none;
+  overflow: hidden;
+}
+
+#stage[data-pov="1"] #helmetVisor {
+  display: block;
+}
+
+/* Glass surface with a stronger blue tint */
+.helmet-glass {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(
+      ellipse 66% 75% at 50% 50%,
+      rgba(100, 190, 255, 0.035) 0%,
+      rgba(60, 150, 210, 0.08) 55%,
+      rgba(0, 12, 28, 0.35) 85%,
+      rgba(0, 0, 0, 0.65) 100%
+    );
+}
+
+/* Large circular helmet opening */
+
+/* Circular astronaut helmet opening */
+.helmet-rim {
+
+/* Helmet frame around the screen edges */
+.helmet-rim {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+
+  border: 0;
+  border-radius: 0;
+  transform: none;
+
+  background: radial-gradient(
+    ellipse 95% 100% at 50% 50%,
+    transparent 58%,
+    rgba(12, 18, 28, 0.35) 72%,
+    rgba(5, 9, 17, 0.92) 91%,
+    #03060c 100%
+  );
+
+  box-shadow:
+    inset 0 0 35px rgba(180, 215, 255, 0.18);
+}
+
+}
+
+
+/* Strong curved reflection across visor glass */
+
+/* Bright curved visor glare */
+.helmet-reflection {
+  position: absolute;
+  top: 9%;
+  left: 17%;
+  width: 62%;
+  height: 22%;
+  border-radius: 50%;
+  background: linear-gradient(
+    180deg,
+    rgba(235, 250, 255, 0.48),
+    rgba(150, 215, 255, 0.18) 45%,
+    transparent 100%
+  );
+  transform: rotate(-12deg);
+  filter: blur(13px);
+}
+
+
+/* Extra curved highlight on the right */
+#helmetVisor::after {
+  content: "";
+  position: absolute;
+  top: 17%;
+  right: 11%;
+  width: 10%;
+  height: 48%;
+  border-radius: 50%;
+  border-right: 5px solid rgba(210, 240, 255, 0.45);
+  transform: rotate(-12deg);
+  filter: blur(3px);
+}
+
+/* Helmet camera label */
+.helmet-label {
+display: none;
+}
+
+</style><script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/addons/"}}</script>
+<script>
+addEventListener('error',function(e){var l=document.getElementById('loading');if(l){l.hidden=false;l.textContent='Error: '+e.message+' ('+(e.filename||'').split('/').pop()+':'+e.lineno+')'}});
+setTimeout(function(){if(!window.__marsBoot){var l=document.getElementById('loading');l.hidden=false;l.innerHTML='The 3D code did not start.<br>Open the page through the server (http://localhost:8000/...), not by double-clicking the file,<br>and make sure the <code>vendor</code> folder is next to terrain.html. Press F12 and check Console for the red error.'}},5000);
+</script></head><body>
+<main id="stage" data-pov="0" data-hands="1">
+  <div id="terrain3d"></div>
+  <div id="pov">
+    <div id="visor"></div>
+    <svg width="0" height="0" style="position:absolute"><defs>
+      <g id="glove" stroke="#bfb9ae" stroke-width="3" stroke-linejoin="round">
+        <path d="M70 420 L108 250 Q118 214 160 212 L238 222 Q274 228 268 262 L244 420Z" fill="#e8e5df"/>
+        <path d="M92 340 Q170 318 256 342" stroke="#c9c4ba" stroke-width="5" fill="none"/>
+        <path d="M110 240 Q182 222 260 244 L254 274 Q182 254 102 274Z" fill="#5d7794" stroke="#3f566f"/>
+        <g fill="#f6f4f0">
+          <rect x="124" y="46" width="34" height="112" rx="17" transform="rotate(-8 141 100)"/>
+          <rect x="161" y="22" width="34" height="122" rx="17" transform="rotate(-2 178 100)"/>
+          <rect x="198" y="30" width="34" height="118" rx="17" transform="rotate(4 215 100)"/>
+          <rect x="234" y="58" width="32" height="100" rx="16" transform="rotate(10 250 110)"/>
+          <path d="M120 232 Q110 160 146 130 L236 122 Q280 126 282 170 L270 240 Q190 262 120 232Z"/>
+          <path d="M270 196 Q336 156 326 112 Q314 84 292 98 Q276 132 250 154Z"/>
+        </g>
+        <path d="M150 150 H250 M158 176 Q205 184 262 172" stroke="#d6d1c7" fill="none"/>
+      </g></defs></svg>
+
+<div id="helmetVisor" aria-hidden="true">
+  <div class="helmet-glass"></div>
+  <div class="helmet-rim"></div>
+  <div class="helmet-reflection"></div>
+  <div class="helmet-label">EVA SUIT · VISOR CAM</div>
+</div>
+
+    <svg id="handL" class="hand" viewBox="0 0 360 430"><g transform="translate(360 0) scale(-1 1)"><use href="#glove"/></g></svg>
+  <svg id="handR" class="hand" viewBox="0 0 360 430"><use href="#glove"/></svg>
+    <div id="hud"><span id="hudText">Distance 0 / 0 m</span><div class="bar"><i id="hudBar"></i></div></div>
+  </div>
+
+  <div id="top">
+    <a class="glass" href="/mars-eva-integrated/mars-eva-integrated/index.html#planner">← 2D planner</a>
+    <span class="glass title">MARS EVA · 3D TERRAIN</span>
+    <span class="sp"></span>
+    <div class="glass seg"><button id="photo" class="on">Photo</button><button id="height">Height</button><button id="thermal">Thermal</button></div>
+    <button id="reset">Reset camera</button>
+  </div>
+  <div id="hint" class="glass">Drag to rotate · Scroll to zoom · Right-drag to pan</div>
+  <div id="statusbar" class="glass"><span id="status">Loading…</span></div>
+  <div id="dock" class="glass">
+    <label>Route <select id="route" hidden><option value="safest">Safest</option><option value="fastest">Fastest</option><option value="energy">Energy</option></select></label>
+    <button id="play">▶ Play POV</button><button id="pause">Ⅱ Pause</button><button id="stop">■ Exit POV</button>
+    <label>Speed <input id="speed" type="range" min="0.25" max="5" step="0.25" value="1"><output id="speedText">1×</output></label>
+    <label><input id="hands" type="checkbox" checked> Hands</label>
+  </div>
+  <div id="loading">Loading Mars terrain…</div>
+</main>
+<script type="module" src="terrain.js"></script></body></html>

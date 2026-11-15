@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Mars EVA Pathfinder</title>
+
+    <!-- Start on the globe (unless the address ends in #planner) -->
+    <script>
+        if (location.hash !== "#planner") {
+            document.documentElement.classList.add("orbit-open");
+        }
+    </script>
+
+    <!-- Leaflet map styling -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+    <!-- 3D globe (orbit view) styling -->
+    <link rel="stylesheet" href="globe.css">
+
+    <!-- Planner styling -->
+    <link rel="stylesheet" href="style.css">
+
+    <!-- Mission briefing (report) styling -->
+    <link rel="stylesheet" href="briefing.css">
+</head>
+
+<body>
+
+    <!-- The planner is a window that floats in front of Mars -->
+    <div id="planner" class="window" data-planner>
+
+        <header class="bar">
+            <h1 class="bar__title">Mars EVA Pathfinder</h1>
+            <p class="bar__site">Gale crater</p>
+
+            <nav class="tabs" aria-label="Sections">
+                <button id="plannerTab" type="button" aria-pressed="true">Planner</button>
+                <button id="briefingTab" type="button" aria-pressed="false">Mission briefing</button>
+            </nav>
+
+            <button class="bar__return" type="button" data-return-to-orbit>
+                <span class="bar__return-dot" aria-hidden="true"></span>
+                Back to orbit
+            </button>
+        </header>
+
+        <main id="plannerView" class="planner">
+
+            <aside class="panel" aria-label="Planner controls">
+
+                <p id="status" class="status" role="status"></p>
+
+
+                <!-- TERRAIN LAYERS -->
+
+                <section class="panel__group">
+                    <h2>Terrain layer</h2>
+
+                    <div class="segmented" role="group" aria-label="Terrain layer">
+                        <button id="photoBtn" type="button" aria-pressed="true">Photo</button>
+                        <button id="heightBtn" type="button" aria-pressed="false">Height</button>
+                        <button id="thermalBtn" type="button" aria-pressed="false">Thermal</button>
+                    </div>
+
+                    <p id="layerNote" class="panel__note"></p>
+
+                    <label id="slopeRow" class="check">
+                        <input id="slopeToggle" type="checkbox">
+                        <span>Shade ground steeper than 10°</span>
+                    </label>
+                </section>
+
+
+                <!-- EVA PLAN -->
+
+                <section class="panel__group">
+                    <div class="panel__heading">
+                        <h2>EVA plan</h2>
+
+                        <div class="segmented segmented--small" role="group" aria-label="Coordinate format">
+                            <button id="gridModeBtn" type="button" aria-pressed="true">Row, column</button>
+                            <button id="geoModeBtn" type="button" aria-pressed="false">Lat, long</button>
+                        </div>
+                    </div>
+
+                    <form id="coordinateForm" class="points" novalidate>
+
+                        <div class="point" role="group" aria-labelledby="startLabel">
+                            <p id="startLabel" class="point__name"><span class="key key--start">S</span>Start</p>
+                            <button id="pickStartBtn" class="point__pick" type="button">Pick on map</button>
+
+                            <label class="field">
+                                <span data-coordinate-label="first">Row</span>
+                                <input id="startFirst" type="number" inputmode="decimal" autocomplete="off">
+                            </label>
+                            <label class="field">
+                                <span data-coordinate-label="second">Column</span>
+                                <input id="startSecond" type="number" inputmode="decimal" autocomplete="off">
+                            </label>
+
+                            <p id="startError" class="point__error" hidden></p>
+                        </div>
+
+                        <div class="point" role="group" aria-labelledby="endLabel">
+                            <p id="endLabel" class="point__name"><span class="key key--end">D</span>Destination</p>
+                            <button id="pickEndBtn" class="point__pick" type="button">Pick on map</button>
+
+                            <label class="field">
+                                <span data-coordinate-label="first">Row</span>
+                                <input id="endFirst" type="number" inputmode="decimal" autocomplete="off">
+                            </label>
+                            <label class="field">
+                                <span data-coordinate-label="second">Column</span>
+                                <input id="endSecond" type="number" inputmode="decimal" autocomplete="off">
+                            </label>
+
+                            <p id="endError" class="point__error" hidden></p>
+                        </div>
+
+                        <!-- Lets the Enter key apply typed coordinates -->
+                        <button type="submit" hidden>Apply coordinates</button>
+                    </form>
+
+                    <p id="coordinateRange" class="panel__note panel__note--flush"></p>
+
+                    <dl class="plan">
+                        <div>
+                            <dt><span class="key key--science">★</span>Science targets</dt>
+                            <dd id="scienceCount">0</dd>
+                        </div>
+                    </dl>
+
+                    <div class="actions">
+                        <button id="routeBtn" class="button button--primary" type="button" disabled>Plan route</button>
+                        <button id="targetBtn" class="button" type="button">Add science target</button>
+                        <button id="resetBtn" class="button button--quiet" type="button">Reset</button>
+                    </div>
+                </section>
+
+
+                <!-- ROUTES (shown after planning) -->
+
+                <section id="routeSummary" class="panel__group" hidden>
+                    <h2>Routes</h2>
+
+                    <div id="routeList" class="routes" role="group" aria-label="Routes"></div>
+
+                    <dl class="stats">
+                        <div><dt>Distance</dt><dd id="routeDistance">Not calculated</dd></div>
+                        <div><dt>Estimated time</dt><dd id="routeTime">–</dd></div>
+                        <div><dt>Steepest step</dt><dd id="routeMaxSlope">–</dd></div>
+                        <div><dt>Average slope</dt><dd id="routeAvgSlope">–</dd></div>
+                        <div><dt>Total ascent</dt><dd id="routeAscent">–</dd></div>
+                        <div><dt>Effort score</dt><dd id="routeEffort">–</dd></div>
+                    </dl>
+
+                    <div id="profile" class="profile" hidden>
+                        <p class="profile__title">Elevation along the route</p>
+                        <svg id="profileChart" viewBox="0 0 300 72" preserveAspectRatio="none" role="img"
+                            aria-label="Elevation along the route"></svg>
+                        <div class="profile__scale">
+                            <span>Start</span>
+                            <span id="profileRange"></span>
+                            <span>Destination</span>
+                        </div>
+                    </div>
+
+                    <p class="panel__note panel__note--after">
+                        Routes use a 10° slope limit. Travel time and effort are simplified estimates.
+                    </p>
+
+                    <div class="actions actions--single">
+                        <button id="briefingBtn" class="button button--primary" type="button">Generate mission briefing</button>
+                    </div>
+                </section>
+
+
+                <!-- LANDING SITE ANALYZER -->
+
+                <section id="landingSection" class="panel__group">
+                    <h2>Crewed landing site analyzer</h2>
+
+                    <p class="panel__note panel__note--flush">
+                        Screens the terrain inside a 50 m radius using 5 m elevation data
+                        and demonstration thresholds.
+                    </p>
+
+                    <div class="actions actions--single">
+                        <button id="landingBtn" class="button" type="button">Analyze a landing site</button>
+                    </div>
+
+                    <div id="landingResult" class="landing" hidden>
+                        <p id="landingStatus" class="landing__label"></p>
+                        <p id="landingCoordinates" class="landing__place"></p>
+
+                        <dl class="stats">
+                            <div><dt>Average slope</dt><dd id="landingAvgSlope">–</dd></div>
+                            <div><dt>Maximum slope</dt><dd id="landingMaxSlope">–</dd></div>
+                            <div><dt>Terrain roughness</dt><dd id="landingRoughness">–</dd></div>
+                            <div><dt>Data coverage</dt><dd id="landingCoverage">–</dd></div>
+                        </dl>
+
+                        <ul id="landingReasons" class="landing__reasons"></ul>
+
+                        <details class="landing__limits">
+                            <summary>What this check does not cover</summary>
+                            <ul id="landingLimitations"></ul>
+                        </details>
+                    </div>
+
+                    <p class="panel__note panel__note--after">
+                        Preliminary terrain screening only. This does not certify landing safety.
+                        Rocks, soil stability and landing dynamics are not evaluated.
+                    </p>
+                </section>
+
+
+                <!-- DATA CREDITS -->
+
+                <footer class="credits">
+                    Terrain and imagery: HiRISE, NASA / JPL-Caltech / University of Arizona.
+                    Thermal: THEMIS, NASA / JPL-Caltech / Arizona State University.
+                </footer>
+
+            </aside>
+
+
+            <!-- MAP -->
+
+            <div class="mapwrap">
+                <div id="map"></div>
+                <p id="coordinates" class="mapwrap__coords">Move over the map to read coordinates</p>
+            </div>
+
+        </main>
+
+
+        <!-- MISSION BRIEFING -->
+
+        <section id="briefingView" class="briefing" aria-label="Mission briefing" hidden>
+
+            <div id="briefingTools" class="briefing__tools" hidden>
+                <p id="briefingNote" class="briefing__note" role="status"></p>
+                <button id="downloadReportBtn" class="button button--primary" type="button">Download report</button>
+                <button id="downloadRouteBtn" class="button" type="button">Download route data (CSV)</button>
+                <button id="printReportBtn" class="button" type="button">Print or save as PDF</button>
+            </div>
+
+            <div id="briefingEmpty" class="briefing__empty">
+                <h2>No briefing yet</h2>
+                <p>Plan a route in the planner, then choose Generate mission briefing.</p>
+                <button id="briefingToPlannerBtn" class="button" type="button">Go to the planner</button>
+            </div>
+
+            <div id="briefingHolder" class="briefing__holder" hidden></div>
+
+        </section>
+    </div>
+
+    <!-- Leaflet map library -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Planner -->
+    <script src="script.js"></script>
+
+    <!-- Mission briefing -->
+    <script src="briefing.js"></script>
+
+    <!-- 3D globe. If it cannot load, the planner opens by itself. -->
+    <script type="module" src="globe.js"
+        onerror="document.documentElement.classList.remove('orbit-open'); document.querySelector('[data-return-to-orbit]').hidden = true;"></script>
+
+</body>
+</html>
